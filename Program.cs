@@ -15,14 +15,30 @@ namespace sym_fetch
 				directory: Environment.CurrentDirectory
 			);
 
-			foreach (var file in Directory.EnumerateFiles(Environment.CurrentDirectory, "*.dll")) {
+			foreach (var file in Directory.EnumerateFiles(Environment.CurrentDirectory, "*.dll"))
+			{
 				var dir = Path.GetDirectoryName(file);
 				var name = Path.GetFileNameWithoutExtension(file);
+				var pdb = Path.Combine(dir, name + ".pdb");
 
-				if (!File.Exists(Path.Combine(dir, name + ".pdb"))) {
+				if (!File.Exists(pdb))
+				{
 					Console.WriteLine($"Fetching symbols for {file}...");
 
 					downloader.DownloadFile(file);
+
+					if (!File.Exists(pdb))
+					{
+						Console.ForegroundColor = ConsoleColor.Yellow;
+						Console.WriteLine($"Not found.");
+						Console.ResetColor();
+					}
+				}
+				else
+				{
+					Console.ForegroundColor = ConsoleColor.DarkGray;
+					Console.WriteLine($"Symbols already exist {pdb}...");
+					Console.ResetColor();
 				}
 			}
 		}
