@@ -17,7 +17,14 @@ namespace sym_fetch
 		SideBySide
 	}
 
-	// copied in large part from https://github.com/rajkumar-rangaraj/PDB-Downloader
+	public enum DownloadResult
+	{
+		NotFound,
+		Success,
+		Exists,
+		Error
+	}
+
 	public sealed class Downloader
 	{
 		public Downloader(
@@ -73,47 +80,9 @@ namespace sym_fetch
 		private readonly string server;
 		private readonly string directory;
 
-		// todo: rename to buffer-size
 		private readonly Int32 bufferSize = 4096;
 
 		public readonly Dictionary<string, string> FailedFiles = new Dictionary<string, string>();
-
-		public static string FormatSizeBinary(Int64 size)
-		{
-			return FormatSizeBinary(size, default_decimals);
-		}
-
-		public static string FormatSizeBinary(Int64 size, Int32 decimals)
-		{
-			String[] sizes = { "B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB" };
-			Double formattedSize = size;
-			Int32 sizeIndex = 0;
-			while (formattedSize >= 1024 && sizeIndex < sizes.Length)
-			{
-				formattedSize /= 1024;
-				sizeIndex += 1;
-			}
-
-			return Math.Round(formattedSize, decimals) + sizes[sizeIndex];
-		}
-
-		public static string FormatSizeDecimal(Int64 size)
-		{
-			return FormatSizeDecimal(size, default_decimals);
-		}
-
-		public static string FormatSizeDecimal(Int64 size, Int32 decimals)
-		{
-			String[] sizes = { "B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB" };
-			Double formattedSize = size;
-			Int32 sizeIndex = 0;
-			while (formattedSize >= 1000 && sizeIndex < sizes.Length)
-			{
-				formattedSize /= 1000;
-				sizeIndex += 1;
-			}
-			return Math.Round(formattedSize, decimals) + sizes[sizeIndex];
-		}
 
 		private HttpWebResponse Retry(Assembly asm, bool headVerb)
 		{
@@ -210,28 +179,28 @@ namespace sym_fetch
 			}
 		}
 
+		// UserAgent:  Microsoft-Symbol-Server/10.0.10036.206
+		// Host:  msdl.microsoft.com
+		// URI: /download/symbols/iiscore.pdb/6E3058DA562C4EB187071DC08CF7B59E1/iiscore.pdb
 		public string BuildUrl(string filename)
 		{
-			PeHeaderReader reader = new PeHeaderReader(filename);
-			// UserAgent:  Microsoft-Symbol-Server/10.0.10036.206
-			// Host:  msdl.microsoft.com
-			// URI: /download/symbols/iiscore.pdb/6E3058DA562C4EB187071DC08CF7B59E1/iiscore.pdb
-			if (string.IsNullOrEmpty(reader.pdbName))
+			var meta = MetadataReader.Read(filename);
+
+			if (meta == null || string.IsNullOrEmpty(meta.PdbName))
 			{
 				return string.Empty;
 			}
 			else
 			{
-				var segments = reader.pdbName.Split(new char[] { '\\' });
+				var segments = meta.PdbName.Split(new char[] { '\\' });
 				var pdbName = segments[segments.Length - 1];
 
-				return this.server + "/" + pdbName + "/" + reader.debugGUID.ToString("N").ToUpper() + reader.pdbage + "/" + pdbName;
+				return this.server + "/" + pdbName + "/" + meta.DebugGUID.ToString("N").ToUpper() + meta.PdbAge + "/" + pdbName;
 			}
 		}
 
 		private string GetOutputDirectory(Assembly asm)
 		{
-
 			if (this.style == OutputStyle.Debugger)
 			{
 				return this.directory + "\\" + asm.Name + "\\" + asm.PdbGuid;
@@ -240,13 +209,18 @@ namespace sym_fetch
 			return this.directory;
 		}
 
-		public void DownloadFile(string path)
+		public DownloadResult DownloadFile(string path)
 		{
 			bool headVerb = false;
 			bool fileptr = false;
 
 			Assembly file = new Assembly(BuildUrl(path));
 			string dirPath = GetOutputDirectory(file);
+
+			if (File.Exists(Path.Combine(dirPath, file.Name)))
+			{
+				return DownloadResult.Exists;
+			}
 
 			try
 			{
@@ -271,6 +245,7 @@ namespace sym_fetch
 
 					if (res.StatusCode != HttpStatusCode.OK)
 					{
+
 						FailedFiles[file.Name] = " - " + res.StatusCode + "  " + res.StatusDescription;
 					}
 				}
@@ -278,18 +253,22 @@ namespace sym_fetch
 				if (res.StatusCode == HttpStatusCode.OK)
 				{
 					HandleSuccess(res, file, fileptr, dirPath);
+
+					return DownloadResult.Success;
 				}
 			}
 			catch (Exception ex)
 			{
 				WriteToLog(file.Name, ex);
+
+				return DownloadResult.Error;
 			}
+
+			return DownloadResult.NotFound;
 		}
 
-		public void HandleSuccess(HttpWebResponse res, Assembly file, bool fileptr, string dirPath)
+		private void HandleSuccess(HttpWebResponse res, Assembly file, bool fileptr, string dirPath)
 		{
-
-			// todo: buffer pool
 			Byte[] readBytes = new Byte[this.bufferSize];
 
 			Directory.CreateDirectory(dirPath);
@@ -312,8 +291,7 @@ namespace sym_fetch
 					file.Name = ProbeWithUnderscore(file.Name);
 				}
 
-				string filePath = dirPath + "\\" + file.Name;
-
+				var filePath = dirPath + "\\" + file.Name;
 				var writer = new FileStream(filePath, FileMode.Create);
 				var stream = res.GetResponseStream();
 
@@ -326,12 +304,12 @@ namespace sym_fetch
 			}
 		}
 
-		public static void WriteToLog(string fileName, Exception exc)
+		private static void WriteToLog(string fileName, Exception exc)
 		{
 			WriteToLog(fileName, exc.ToString());
 		}
 
-		public static void WriteToLog(string fileName, string text)
+		private static void WriteToLog(string fileName, string text)
 		{
 			// todo: format in the current directory
 			using (FileStream fs = new FileStream("Log.txt", FileMode.Append))
@@ -343,18 +321,16 @@ namespace sym_fetch
 
 		private void HandleCompression(string filePath)
 		{
-			// what the ....
-			string uncompressedFilePath = filePath.Remove(filePath.Length - 1);
-			uncompressedFilePath = uncompressedFilePath.Insert(uncompressedFilePath.Length, "b");
+			// out is the same as in, unless it ends in 
+			var uncompressedFilePath = filePath;
+			if (filePath.EndsWith("_"))
+			{
+				uncompressedFilePath = filePath.Remove(filePath.Length - 1) + "b";
+			}
 
-			string args = string.Format("expand {0} {1}", "\"" + filePath + "\"", "\"" + uncompressedFilePath + "\"");
+			string args = string.Format("\"{0}\" \"{1}\"", filePath, uncompressedFilePath);
 
-			//  what the....
-			Match m = Regex.Match(args, "^\\s*\"(.*?)\"\\s*(.*)");
-			if (!m.Success)
-				m = Regex.Match(args, @"\s*(\S*)\s*(.*)");    // thing before first space is command
-
-			ProcessStartInfo startInfo = new ProcessStartInfo(m.Groups[1].Value, m.Groups[2].Value);
+			ProcessStartInfo startInfo = new ProcessStartInfo("expand", args);
 
 			startInfo.WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden;
 			startInfo.UseShellExecute = false;
