@@ -40,7 +40,7 @@ namespace sym_fetch
 					Console.Out.WriteLine(err);
 				}
 			}
-			
+
 			Console.WriteLine("Usage: sym-fetch [options]\n");
 			Console.WriteLine("Options");
 			options.WriteOptionDescriptions(Console.Out);
@@ -60,20 +60,10 @@ namespace sym_fetch
 				ShowHelpAndExit(errors);
 			}
 
-			// todo: mono options or the .net contrib console stuff
-			// todo: accept output locations other than the current directory
-			// todo: accept side-by-side pdb styles
-			// todo: ignore files which already have a corresponding pdb
-			var downloader = new Downloader(
-				directory: Environment.CurrentDirectory,
-				style: style
-			);
+			var downloader = new Downloader(directory: output, style: style);
 
-			foreach (var file in Directory.EnumerateFiles(Environment.CurrentDirectory, "*.dll"))
+			foreach (var file in Directory.EnumerateFiles(input, "*.dll"))
 			{
-				var dir = Path.GetDirectoryName(file);
-				var name = Path.GetFileNameWithoutExtension(file);
-
 				Console.Write($"Fetching {file}... ");
 
 				var res = downloader.DownloadFile(file);
