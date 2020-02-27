@@ -22,7 +22,8 @@ namespace sym_fetch
 		NotFound,
 		Success,
 		Exists,
-		Error
+		Error,
+		NoSymbols
 	}
 
 	public sealed class Downloader
@@ -216,7 +217,7 @@ namespace sym_fetch
 
 			var url = BuildUrl(path);
 			if(String.IsNullOrEmpty(url))
-				return DownloadResult.Error;
+				return DownloadResult.NoSymbols;
 
 			Assembly file = new Assembly(url);
 			string dirPath = GetOutputDirectory(file);

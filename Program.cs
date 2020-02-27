@@ -11,10 +11,21 @@ namespace sym_fetch
 		private static string output;
 		private static OutputStyle style;
 
+		public enum DeleteOptions {
+			None = 0,
+			NotFound = 1, 
+			NoSymbols = 2,
+
+			DryRun = 4
+		}
+
+		public static DeleteOptions deleteOptions = DeleteOptions.None;
+
 		private static readonly OptionSet options = new OptionSet()
 		{
 			{ "i|in=", "The input directory to probe for assemblies", (s) => { input = s; } },
 			{ "o|out=", "The symbol desitination directory", (s) => { output = s; } },
+			{ "d|del=", "Delete binaries without related symbols", (s) => { SetDeleteOptions(s); } },
 			{ "s|style=", "The output path style [ Debugger | SideBySide ]", (s) => { SetStyle(s); } },
 			{ "h|?|help", "display the command line help", (_) => { ShowHelpAndExit(null); } }
 		};
@@ -28,6 +39,20 @@ namespace sym_fetch
 			}
 
 			Program.style = (OutputStyle)obj;
+		}
+
+		private static void SetDeleteOptions(string options)
+		{
+			var opts = options.Split("+");
+			DeleteOptions deleteOptions = DeleteOptions.None;
+			foreach(var opt in opts) {
+				if(Enum.TryParse<DeleteOptions>(opt, out var deleteOption)) {
+					deleteOptions |= deleteOption;
+					Console.WriteLine($"Delete option: {deleteOption}");
+				}
+			}
+
+			Program.deleteOptions = deleteOptions;
 		}
 
 		private static void ShowHelpAndExit(IEnumerable<string> errors = null)
@@ -45,6 +70,21 @@ namespace sym_fetch
 			Console.WriteLine("Options");
 			options.WriteOptionDescriptions(Console.Out);
 			Environment.Exit(-1);
+		}
+
+		static void Delete(string file) {
+			try {
+				if(!Program.deleteOptions.HasFlag(DeleteOptions.DryRun)) {
+					Console.WriteLine($"Deleting... {file}");
+					File.Delete(file);
+					Console.WriteLine($"Deleting... {file} succeed");
+				} else {
+					Console.WriteLine($"Fake deleting... {file}");
+				}
+			}
+			catch(Exception ex) {
+				Console.WriteLine($"Deleting... {file} failed: {ex}");
+			}
 		}
 
 		public static void Main(string[] args)
@@ -72,6 +112,10 @@ namespace sym_fetch
 				{
 					Console.ForegroundColor = ConsoleColor.Yellow;
 					Console.WriteLine($"Symbols not found");
+
+					if(Program.deleteOptions.HasFlag(DeleteOptions.NotFound)) {
+						Delete(file);
+					}
 				}
 				else if (res == DownloadResult.Exists)
 				{
@@ -82,6 +126,15 @@ namespace sym_fetch
 				{
 					Console.ForegroundColor = ConsoleColor.Green;
 					Console.WriteLine("Success");
+				}
+				else if(res == DownloadResult.NoSymbols)
+				{
+					Console.ForegroundColor = ConsoleColor.DarkRed;
+					Console.WriteLine("No symbols found");
+
+					if(Program.deleteOptions.HasFlag(DeleteOptions.NoSymbols)) {
+						Delete(file);
+					}
 				}
 
 				Console.ResetColor();
