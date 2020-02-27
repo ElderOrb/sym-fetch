@@ -214,7 +214,11 @@ namespace sym_fetch
 			bool headVerb = false;
 			bool fileptr = false;
 
-			Assembly file = new Assembly(BuildUrl(path));
+			var url = BuildUrl(path);
+			if(String.IsNullOrEmpty(url))
+				return DownloadResult.Error;
+
+			Assembly file = new Assembly(url);
 			string dirPath = GetOutputDirectory(file);
 
 			if (File.Exists(Path.Combine(dirPath, file.Name)))
