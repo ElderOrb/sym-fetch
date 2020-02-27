@@ -102,7 +102,7 @@ namespace sym_fetch
 
 			var downloader = new Downloader(directory: output, style: style);
 
-			foreach (var file in Directory.EnumerateFiles(input, "*.dll"))
+			foreach (var file in Directory.EnumerateFiles(input, "*.dll", SearchOption.AllDirectories))
 			{
 				Console.Write($"Fetching {file}... ");
 
